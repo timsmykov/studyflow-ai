@@ -1,105 +1,132 @@
+"""
+Progress API Endpoints
+
+Endpoints for tracking student skill mastery using BKT (Bayesian Knowledge Tracing).
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import Session
+from sqlmodel import Session, select
 from typing import List
-from app.models import Student, BKTProgressUpdate, BKTProgressRead
-from app.database import get_db
-from app.services.bkt_service import bkt_service
-from app.utils.clerk_auth import get_current_clerk_user
 
-router = APIRouter(prefix="/progress", tags=["progress"])
+from app.database import get_session
+from app.models import Student, BKTProgress, BKTProgressRead
+from app.services.bkt import update_progress, get_student_skills, default_bkt
+
+router = APIRouter(prefix="/students", tags=["progress"])
 
 
-@router.post("/skills/{skill_id}", response_model=BKTProgressRead)
-async def update_skill_progress(
+@router.post("/{student_id}/skills/{skill_id}/correct", response_model=BKTProgressRead)
+async def record_correct_answer(
+    student_id: int,
     skill_id: str,
-    update_data: BKTProgressUpdate,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_clerk_user)
-):
+    session: Session = Depends(get_session)
+) -> BKTProgress:
     """
-    Update a student's mastery for a specific skill using BKT.
+    Record a correct answer and update skill mastery.
 
     Args:
-        skill_id: The skill identifier (e.g., "math:algebra:variables")
-        update_data: {correct: bool} - Whether the student answered correctly
+        student_id: Student ID
+        skill_id: Skill ID
+        session: Database session
 
-    Returns updated mastery (0-1 scale).
+    Returns:
+        Updated BKTProgress record
     """
-    clerk_id = current_user["user_id"]
-
-    # Get student
-    student = db.query(Student).filter(Student.clerk_id == clerk_id).first()
+    # Verify student exists
+    student = session.get(Student, student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student profile not found"
+            detail=f"Student with id {student_id} not found"
         )
 
-    # Update progress using BKT
-    progress = bkt_service.update_progress(
-        db=db,
-        student_id=student.id,
-        skill_id=skill_id,
-        correct=update_data.correct
-    )
+    # Update progress for correct answer
+    try:
+        progress = update_progress(
+            session=session,
+            student_id=student_id,
+            skill_id=skill_id,
+            is_correct=True,
+            bkt_model=default_bkt
+        )
+        return progress
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update progress: {str(e)}"
+        )
 
-    return progress
 
-
-@router.get("/skills/{skill_id}", response_model=BKTProgressRead)
-async def get_skill_progress(
+@router.post("/{student_id}/skills/{skill_id}/incorrect", response_model=BKTProgressRead)
+async def record_incorrect_answer(
+    student_id: int,
     skill_id: str,
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_clerk_user)
-):
+    session: Session = Depends(get_session)
+) -> BKTProgress:
     """
-    Get a student's mastery for a specific skill.
-    """
-    clerk_id = current_user["user_id"]
+    Record an incorrect answer and update skill mastery.
 
-    # Get student
-    student = db.query(Student).filter(Student.clerk_id == clerk_id).first()
+    Args:
+        student_id: Student ID
+        skill_id: Skill ID
+        session: Database session
+
+    Returns:
+        Updated BKTProgress record
+    """
+    # Verify student exists
+    student = session.get(Student, student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student profile not found"
+            detail=f"Student with id {student_id} not found"
         )
 
-    # Get progress
-    from app.models import BKTProgress
-    progress = db.query(BKTProgress).filter(
-        BKTProgress.student_id == student.id,
-        BKTProgress.skill_id == skill_id
-    ).first()
-
-    if not progress:
+    # Update progress for incorrect answer
+    try:
+        progress = update_progress(
+            session=session,
+            student_id=student_id,
+            skill_id=skill_id,
+            is_correct=False,
+            bkt_model=default_bkt
+        )
+        return progress
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No progress data found for this skill"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update progress: {str(e)}"
         )
 
-    return progress
 
-
-@router.get("/skills", response_model=List[BKTProgressRead])
-async def get_all_skills_progress(
-    db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_clerk_user)
-):
+@router.get("/{student_id}/skills", response_model=List[BKTProgressRead])
+async def get_student_skill_list(
+    student_id: int,
+    session: Session = Depends(get_session)
+) -> List[BKTProgress]:
     """
-    Get all skill mastery progress for the current student.
-    """
-    clerk_id = current_user["user_id"]
+    Get all skills and their mastery for a student.
 
-    # Get student
-    student = db.query(Student).filter(Student.clerk_id == clerk_id).first()
+    Args:
+        student_id: Student ID
+        session: Database session
+
+    Returns:
+        List of BKTProgress records
+    """
+    # Verify student exists
+    student = session.get(Student, student_id)
     if not student:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Student profile not found"
+            detail=f"Student with id {student_id} not found"
         )
 
-    # Get all progress
-    progress_list = bkt_service.get_all_student_skills(db, student.id)
-
-    return progress_list
+    try:
+        skills = get_student_skills(session, student_id)
+        return skills
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch skills: {str(e)}"
+        )
