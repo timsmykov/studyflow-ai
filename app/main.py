@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.api import progress_router, analytics_router
+from app.api.progress import router as progress_router
+from app.api.analytics import router as analytics_router
 
 # Create FastAPI app
 app = FastAPI(
