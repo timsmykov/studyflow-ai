@@ -9,6 +9,9 @@ from app.config import settings
 from app.database import init_db
 from app.api.progress import router as progress_router
 from app.api.analytics import router as analytics_router
+from app.api.chat import router as chat_router
+from app.api.dropout import router as dropout_router
+from app.api.students import router as students_router
 
 # Create FastAPI app
 app = FastAPI(
@@ -52,3 +55,6 @@ async def health_check():
 # Include routers
 app.include_router(progress_router)
 app.include_router(analytics_router)
+app.include_router(chat_router)
+app.include_router(dropout_router)
+app.include_router(students_router)
