@@ -11,6 +11,7 @@ class AIChatService:
         self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.OPENAI_MODEL
         self.context_window = 20  # Number of messages to keep in context
+        self._last_stream_metrics = {}
 
         # Initialize tiktoken for accurate token counting
         try:
@@ -109,16 +110,15 @@ class AIChatService:
         except Exception as e:
             raise RuntimeError(f"OpenAI streaming error: {str(e)}")
 
-        # Track latency
+        # Track latency and store for later access
         end_time = time.time()
         total_latency = (end_time - start_time) * 1000  # Convert to ms
         first_chunk_latency = (
             (first_chunk_time - start_time) * 1000 if first_chunk_time else 0
         )
 
-        # You can return or log latency metrics here
-        # For now, we'll just track them internally
-        return {
+        # Store metrics as instance variables for later access
+        self._last_stream_metrics = {
             "total_latency_ms": total_latency,
             "first_chunk_latency_ms": first_chunk_latency,
             "token_count": token_count,
